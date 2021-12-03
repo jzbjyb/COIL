@@ -35,12 +35,12 @@ class COIL(nn.Module):
     @classmethod
     def from_pretrained(
             cls, model_args: ModelArguments, data_args: DataArguments, train_args: TrainingArguments,
-            *args, **kwargs
+            skip_load: bool = False, *args, **kwargs
     ):
         hf_model = AutoModel.from_pretrained(*args, **kwargs)
         model = COIL(hf_model, model_args, data_args, train_args)
         path = args[0]
-        if os.path.exists(os.path.join(path, 'model.pt')):
+        if not skip_load and os.path.exists(os.path.join(path, 'model.pt')):
             logger.info('loading extra weights from local files')
             model_dict = torch.load(os.path.join(path, 'model.pt'), map_location="cpu")
             load_result = model.load_state_dict(model_dict, strict=False)
@@ -55,9 +55,14 @@ class COIL(nn.Module):
         torch.save(model_dict, os.path.join(output_dir, 'model.pt'))
         torch.save([self.data_args, self.model_args, self.train_args], os.path.join(output_dir, 'args.pt'))
 
-    def encode(self, **features):
+    def encode(self, use_raw_repr: bool = False, compress_ratio: int = 1, **features):
         assert all([x in features for x in ['input_ids', 'attention_mask', 'token_type_ids']])
         model_out: BaseModelOutputWithPooling = self.model(**features, return_dict=True)
+        if use_raw_repr:
+            lhs = model_out.last_hidden_state
+            if compress_ratio != 1:
+                lhs = lhs[:, :, ::compress_ratio]
+            return lhs[:, 0], lhs
         cls = self.cls_proj(model_out.last_hidden_state[:, 0])
         reps = self.tok_proj(model_out.last_hidden_state)
         if self.model_args.cls_norm_after:

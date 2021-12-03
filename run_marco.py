@@ -132,8 +132,9 @@ def main():
         cache_dir=model_args.cache_dir,
         use_fast=False,
     )
+    skip_load = training_args.use_raw_repr
     model = COIL.from_pretrained(
-        model_args, data_args, training_args,
+        model_args, data_args, training_args, skip_load,
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
@@ -236,7 +237,9 @@ def main():
                 with torch.no_grad():
                     for k, v in batch.items():
                         batch[k] = v.to(training_args.device)
-                    cls, reps = model.encode(**batch)
+                    cls, reps = model.encode(**batch,
+                                             use_raw_repr=training_args.use_raw_repr,
+                                             compress_ratio=training_args.compress_ratio)
                     encoded.append((cls.cpu(), reps.cpu()))
 
         all_cls = torch.cat([x[0] for x in encoded]).numpy()
@@ -247,7 +250,7 @@ def main():
         tok_pid_dict = defaultdict(list)
 
         for pos, entry in enumerate(tqdm(encode_dataset.nlp_dataset)):
-            pid_str = entry['pid']
+            pid_str = entry['pid'].split('-', 1)[-1]  # used for format such as "doc-"
             if data_args.document:
                 pid_str = pid_str[1:]  # remove the `D`
             pid, passage = int(pid_str), entry['psg']

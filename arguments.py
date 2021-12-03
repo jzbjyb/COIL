@@ -88,3 +88,5 @@ class DataArguments:
 class COILTrainingArguments(TrainingArguments):
     warmup_ratio: float = field(default=0)
     do_encode: bool = field(default=False, metadata={"help": "Whether to run encoding on the test set."})
+    use_raw_repr: bool = field(default=False, metadata={'help': 'directly use the hidden states from LMs'})
+    compress_ratio: int = field(default=1, metadata={'help': 'compress the representation by this ratio'})

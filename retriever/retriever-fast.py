@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--top', type=int, default=1000)
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--save_to', required=True)
+    parser.add_argument('--only_invert', action='store_true', help='only use contextual inverted list')
     args = parser.parse_args()
 
     all_ivl_scatter_maps = torch.load(os.path.join(args.doc_shard, 'ivl_scatter_maps.pt'))
@@ -67,6 +68,8 @@ def main():
     for batch_start in trange(0, len(all_query_offsets), batch_size, desc=shard_name):
         batch_q_reps = query_cls_reps[batch_start: batch_start + batch_size]
         match_scores = torch.matmul(batch_q_reps, doc_cls_reps.transpose(0, 1))  # D * b
+        if args.only_invert:
+            match_scores = match_scores * 0
 
         batched_qtok_offsets = defaultdict(list)
         q_batch_offsets = defaultdict(list)
