@@ -4,6 +4,7 @@ model_dir=$1
 tokenizer=$2
 inp_dir=$3
 out_dir=$4
+args="${@:5}"
 
 total_split=40
 num_gpu=8
@@ -27,8 +28,7 @@ do
     --dataloader_num_workers 4 \
     --encode_in_path ${inp_dir}/split${i} \
     --encoded_save_path ${out_dir}/split${i} \
-    --compress_ratio 8 \
-    --use_raw_repr &
+    ${args}
   gpu_id="$((gpu_id + 1))"
   if (( ${gpu_id} == ${num_gpu} )); then
     wait

@@ -105,13 +105,16 @@ class COIL(nn.Module):
             # in testing phase, we have Q == D
             assert doc_input_ids.size(0) == qry_input_ids.size(0), \
                 'we expect same number of query/doc'
-            tok_scores = self.compute_tok_score_pair(
-                doc_reps, doc_input_ids,
-                qry_reps, qry_input_ids, qry_attention_mask
-            )
 
-            # compute cls score separately
-            cls_scores = (qry_cls * doc_cls).sum(-1)
+            if not self.model_args.cls_only:
+                tok_scores = self.compute_tok_score_pair(
+                    doc_reps, doc_input_ids,
+                    qry_reps, qry_input_ids, qry_attention_mask
+                )
+
+            if not self.model_args.no_cls:
+                # compute cls score separately
+                cls_scores = (qry_cls * doc_cls).sum(-1)
 
             # sum the scores
             if self.model_args.no_cls:
@@ -139,20 +142,24 @@ class COIL(nn.Module):
                 qry_input_ids, qry_attention_mask, qry_cls, qry_reps = self.gather_tensors(
                     qry_input_ids, qry_attention_mask, qry_cls, qry_reps)
 
-            # qry_reps: Q * LQ * d
-            # doc_reps: D * LD * d
-            tok_scores = self.compute_tok_score_cart(
-                doc_reps, doc_input_ids,
-                qry_reps, qry_input_ids, qry_attention_mask
-            )
+            if not self.model_args.cls_only:
+                # qry_reps: Q * LQ * d
+                # doc_reps: D * LD * d
+                tok_scores = self.compute_tok_score_cart(
+                    doc_reps, doc_input_ids,
+                    qry_reps, qry_input_ids, qry_attention_mask
+                )
+
+            if not self.model_args.no_cls:
+                # compute cls score separately
+                cls_scores = torch.matmul(qry_cls, doc_cls.transpose(1, 0))  # Q * D
 
             # remove padding and cls token
             if self.model_args.no_cls:
                 scores = tok_scores
             elif self.model_args.cls_only:
-                scores = torch.matmul(qry_cls, doc_cls.transpose(1, 0))  # Q * D
+                scores = cls_scores
             else:
-                cls_scores = torch.matmul(qry_cls, doc_cls.transpose(1, 0))  # Q * D
                 with autocast(False):
                     scores = tok_scores.float() + cls_scores.float()  # Q * D
 

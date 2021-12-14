@@ -7,14 +7,37 @@ if [[ ${model_short} == "bert" ]]; then
   model=bert-base-uncased
   tokenizer=bert-base-uncased
   filename=bert.jsonl
+  enc_args='--compress_ratio 8 --use_raw_repr'
 elif [[ ${model_short} == "scibert" ]]; then
   model=allenai/scibert_scivocab_uncased
   tokenizer=allenai/scibert_scivocab_uncased
   filename=scibert.jsonl
+  enc_args='--compress_ratio 8 --use_raw_repr'
 elif [[ ${model_short} == "coil" ]]; then
   model=trained_models/hn-checkpoint
   tokenizer=bert-base-uncased
   filename=bert.jsonl
+  enc_args='--compress_ratio 8 --use_raw_repr'
+elif [[ ${model_short} == "scibert_tok" ]]; then
+  model=trained_models/scibert_biology_intro_umls_tok
+  tokenizer=allenai/scibert_scivocab_uncased
+  filename=scibert.jsonl
+  enc_args=""
+elif [[ ${model_short} == "scibert_tok_4000" ]]; then
+  model=trained_models/scibert_biology_intro_umls_tok/checkpoint-4000
+  tokenizer=allenai/scibert_scivocab_uncased
+  filename=scibert.jsonl
+  enc_args=""
+elif [[ ${model_short} == "scibert_tok_12000" ]]; then
+  model=trained_models/scibert_biology_intro_umls_tok/checkpoint-12000
+  tokenizer=allenai/scibert_scivocab_uncased
+  filename=scibert.jsonl
+  enc_args=""
+elif [[ ${model_short} == "scibert_cls" ]]; then
+  model=trained_models/scibert_biology_intro_umls_cls
+  tokenizer=allenai/scibert_scivocab_uncased
+  filename=scibert.jsonl
+  enc_args=""
 else
   exit
 fi
@@ -36,8 +59,8 @@ mkdir -p ${doc_split}
 split -l $(( (`wc -l < ${doc_jsonl}`+${num_split})/${num_split} )) ${doc_jsonl} ${doc_split}/split -da 2
 
 # encode
-./encode_qry.sh ${model} ${tokenizer} ${query_jsonl} ${query_enc}
-./encode_doc.sh ${model} ${tokenizer} ${doc_split} ${doc_enc}
+./encode_qry.sh ${model} ${tokenizer} ${query_jsonl} ${query_enc} ${enc_args}
+./encode_doc.sh ${model} ${tokenizer} ${doc_split} ${doc_enc} ${enc_args}
 
 # convert format
 ./format_qry.sh ${query_enc} ${query_index}

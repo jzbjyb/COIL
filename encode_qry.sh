@@ -4,6 +4,7 @@ model_dir=$1
 tokenizer=$2
 inp_dir=$3
 out_dir=$4
+args="${@:5}"
 
 mkdir -p ${out_dir}
 python run_marco.py \
@@ -21,5 +22,4 @@ python run_marco.py \
   --dataloader_num_workers 12 \
   --encode_in_path ${inp_dir} \
   --encoded_save_path ${out_dir} \
-  --compress_ratio 8 \
-  --use_raw_repr
+  ${args}
