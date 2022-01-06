@@ -3,6 +3,7 @@
 qry_dir=$1
 doc_dir=$2
 out_dir=$3
+use=$4
 
 total_split=40
 group=8
@@ -16,7 +17,7 @@ do
     --doc_shard ${doc_dir}/shard_${i} \
     --top 1000 \
     --batch_size 512 \
-    --only_invert \
+    --use ${use} \
     --save_to ${out_dir}/intermediate/shard_${i}.pt &
   id="$((id + 1))"
   if (( ${id} == ${group} )); then

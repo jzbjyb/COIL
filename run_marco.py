@@ -161,6 +161,9 @@ def main():
         ),
     )
 
+    if trainer.is_world_process_zero():
+        model.load_wandb()
+
     # Training
     if training_args.do_train:
         trainer.train(

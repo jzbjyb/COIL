@@ -9,6 +9,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput, BaseModelOut
 from arguments import ModelArguments, DataArguments
 from torch import Tensor
 from typing import Dict, List, Tuple, Iterable
+import wandb
 
 import os
 import logging
@@ -31,6 +32,16 @@ class COIL(nn.Module):
             self.ln_tok = nn.LayerNorm(model_args.token_dim)
         if model_args.cls_norm_after:
             self.ln_cls = nn.LayerNorm(model_args.cls_dim)
+
+    def load_wandb(self):
+        if self.train_args.wandb_name:
+            self.wandb = wandb.init(entity=self.train_args.wandb_entity,
+                                    project=self.train_args.wandb_project,
+                                    name=self.train_args.wandb_name)
+
+    def log_wandb(self, *args, **kwargs):
+        if hasattr(self, 'wandb'):
+            self.wandb.log(*args, **kwargs)
 
     @classmethod
     def from_pretrained(
@@ -142,12 +153,20 @@ class COIL(nn.Module):
                 qry_input_ids, qry_attention_mask, qry_cls, qry_reps = self.gather_tensors(
                     qry_input_ids, qry_attention_mask, qry_cls, qry_reps)
 
+            labels = torch.arange(
+                qry_reps.size(0),
+                device=doc_input['input_ids'].device,
+                dtype=torch.long
+            )
+            # offset the labels
+            labels = labels * self.data_args.train_group_size
+
             if not self.model_args.cls_only:
                 # qry_reps: Q * LQ * d
                 # doc_reps: D * LD * d
                 tok_scores = self.compute_tok_score_cart(
                     doc_reps, doc_input_ids,
-                    qry_reps, qry_input_ids, qry_attention_mask
+                    qry_reps, qry_input_ids, qry_attention_mask, labels
                 )
 
             if not self.model_args.no_cls:
@@ -163,14 +182,8 @@ class COIL(nn.Module):
                 with autocast(False):
                     scores = tok_scores.float() + cls_scores.float()  # Q * D
 
-            labels = torch.arange(
-                scores.size(0),
-                device=doc_input['input_ids'].device,
-                dtype=torch.long
-            )
-            # offset the labels
-            labels = labels * self.data_args.train_group_size
             loss = self.cross_entropy(scores, labels)
+            self.log_wandb({'loss': loss.item()})
 
             return loss, scores.view(-1)
 
@@ -196,11 +209,23 @@ class COIL(nn.Module):
         tok_scores = (tok_scores * qry_attention_mask)[:, 1:].sum(-1)
         return tok_scores
 
-    def compute_tok_score_cart(self, doc_reps, doc_input_ids, qry_reps, qry_input_ids, qry_attention_mask):
+    def compute_tok_score_cart(self, doc_reps, doc_input_ids, qry_reps, qry_input_ids, qry_attention_mask, labels = None):
         qry_input_ids = qry_input_ids.unsqueeze(2).unsqueeze(3)  # Q * LQ * 1 * 1
         doc_input_ids = doc_input_ids.unsqueeze(0).unsqueeze(1)  # 1 * 1 * D * LD
         exact_match = doc_input_ids == qry_input_ids  # Q * LQ * D * LD
         exact_match = exact_match.float()
+
+        num_exact_match_toks = (exact_match.max(3)[0] * qry_attention_mask.unsqueeze(2)).sum(1)  # Q * D
+        num_toks = qry_attention_mask.sum(1)  # Q
+        exact_match_ratio = (num_exact_match_toks / num_toks.unsqueeze(1) + 1e-10)  # Q * D
+        labels_mask = torch.zeros_like(exact_match_ratio)  # Q * D
+        labels_mask.scatter_(1, labels.unsqueeze(1), 1.0)  # Q * D
+        avg_pos_exact_match_ratio = (exact_match_ratio * labels_mask).sum() / labels_mask.sum()
+        avg_neg_exact_match_ratio = (exact_match_ratio * (1 - labels_mask)).sum() / (1 - labels_mask).sum()
+        self.log_wandb({
+            'pos_exact_match_ratio': avg_pos_exact_match_ratio.item(),
+            'neg_exact_match_ratio': avg_neg_exact_match_ratio.item()})
+
         scores_no_masking = torch.matmul(
             qry_reps.view(-1, self.model_args.token_dim),  # (Q * LQ) * d
             doc_reps.view(-1, self.model_args.token_dim).transpose(0, 1)  # d * (D * LD)

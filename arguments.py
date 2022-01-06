@@ -90,3 +90,8 @@ class COILTrainingArguments(TrainingArguments):
     do_encode: bool = field(default=False, metadata={"help": "Whether to run encoding on the test set."})
     use_raw_repr: bool = field(default=False, metadata={'help': 'directly use the hidden states from LMs'})
     compress_ratio: int = field(default=1, metadata={'help': 'compress the representation by this ratio'})
+
+    wandb_entity: str = field(default='jzbjyb')
+    wandb_project: str = field(default='coil')
+    wandb_name: str = field(default=None)
+    wandb_log_interval: int = field(default=100)

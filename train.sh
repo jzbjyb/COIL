@@ -7,7 +7,7 @@ port=$3
 args="${@:4}"
 ngpu=4
 batch_size=64
-epoch=3
+epoch=30
 
 python -m torch.distributed.launch --nproc_per_node=${ngpu} --master_port ${port} run_marco.py \
   --output_dir ${output} \

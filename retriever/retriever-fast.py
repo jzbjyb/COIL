@@ -40,7 +40,7 @@ def main():
     parser.add_argument('--top', type=int, default=1000)
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--save_to', required=True)
-    parser.add_argument('--only_invert', action='store_true', help='only use contextual inverted list')
+    parser.add_argument('--use', type=str, default='all', choices=['all', 'tok', 'cls'], help='which component to use')
     args = parser.parse_args()
 
     all_ivl_scatter_maps = torch.load(os.path.join(args.doc_shard, 'ivl_scatter_maps.pt'))
@@ -68,40 +68,41 @@ def main():
     for batch_start in trange(0, len(all_query_offsets), batch_size, desc=shard_name):
         batch_q_reps = query_cls_reps[batch_start: batch_start + batch_size]
         match_scores = torch.matmul(batch_q_reps, doc_cls_reps.transpose(0, 1))  # D * b
-        if args.only_invert:
+        if args.use == 'tok':
             match_scores = match_scores * 0
 
-        batched_qtok_offsets = defaultdict(list)
-        q_batch_offsets = defaultdict(list)
-        for batch_offset, q_offsets in enumerate(all_query_offsets[batch_start: batch_start + batch_size]):
-            for q_tok_id, q_tok_offset in q_offsets:
-                if q_tok_id not in tok_id_2_reps:
-                    continue
-                batched_qtok_offsets[q_tok_id].append(q_tok_offset)
-                q_batch_offsets[q_tok_id].append(batch_offset)
+        if args.use != 'cls':
+            batched_qtok_offsets = defaultdict(list)
+            q_batch_offsets = defaultdict(list)
+            for batch_offset, q_offsets in enumerate(all_query_offsets[batch_start: batch_start + batch_size]):
+                for q_tok_id, q_tok_offset in q_offsets:
+                    if q_tok_id not in tok_id_2_reps:
+                        continue
+                    batched_qtok_offsets[q_tok_id].append(q_tok_offset)
+                    q_batch_offsets[q_tok_id].append(batch_offset)
 
-        batch_qtok_ids = list(batched_qtok_offsets.keys())
-        batched_tok_scores = []
+            batch_qtok_ids = list(batched_qtok_offsets.keys())
+            batched_tok_scores = []
 
-        for q_tok_id in batch_qtok_ids:
-            q_tok_reps = query_tok_reps[batched_qtok_offsets[q_tok_id]]
-            tok_reps = tok_id_2_reps[q_tok_id]
-            tok_scores = torch.matmul(q_tok_reps, tok_reps.transpose(0, 1)).relu_()  # Bt * Ds
-            batched_tok_scores.append(tok_scores)
+            for q_tok_id in batch_qtok_ids:
+                q_tok_reps = query_tok_reps[batched_qtok_offsets[q_tok_id]]
+                tok_reps = tok_id_2_reps[q_tok_id]
+                tok_scores = torch.matmul(q_tok_reps, tok_reps.transpose(0, 1)).relu_()  # Bt * Ds
+                batched_tok_scores.append(tok_scores)
 
-        for i, q_tok_id in enumerate(batch_qtok_ids):
-            ivl_scatter_map = all_ivl_scatter_maps[q_tok_id]
-            shard_scatter_map = all_shard_scatter_maps[q_tok_id]
+            for i, q_tok_id in enumerate(batch_qtok_ids):
+                ivl_scatter_map = all_ivl_scatter_maps[q_tok_id]
+                shard_scatter_map = all_shard_scatter_maps[q_tok_id]
 
-            tok_scores = batched_tok_scores[i]
-            ivl_maxed_scores = torch.empty(len(shard_scatter_map))
+                tok_scores = batched_tok_scores[i]
+                ivl_maxed_scores = torch.empty(len(shard_scatter_map))
 
-            for j in range(tok_scores.size(0)):
-                ivl_maxed_scores.zero_()
-                c_scatter.scatter_max(
-                    tok_scores[j].numpy(), ivl_scatter_map.numpy(), ivl_maxed_scores.numpy())
-                boff = q_batch_offsets[q_tok_id][j]
-                match_scores[boff].scatter_add_(0, shard_scatter_map, ivl_maxed_scores)
+                for j in range(tok_scores.size(0)):
+                    ivl_maxed_scores.zero_()
+                    c_scatter.scatter_max(
+                        tok_scores[j].numpy(), ivl_scatter_map.numpy(), ivl_maxed_scores.numpy())
+                    boff = q_batch_offsets[q_tok_id][j]
+                    match_scores[boff].scatter_add_(0, shard_scatter_map, ivl_maxed_scores)
 
         top_scores, top_iids = match_scores.topk(args.top, dim=1)
         all_query_match_scores.append(top_scores)
